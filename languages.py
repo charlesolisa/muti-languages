@@ -22,7 +22,8 @@ wallpapers = {
     "None": None,
     "Beach": "https://images.unsplash.com/photo-1506744038136-46273834b3fb?auto=format&fit=crop&w=1350&q=80",
     "Mountains": "https://images.unsplash.com/photo-1500534623283-312aade485b7?auto=format&fit=crop&w=1350&q=80",
-    "Forest": "https://images.unsplash.com/photo-1501785888041-af3ef285b470?auto=format&fit=crop&w=1350&q=80"
+    "Forest": "https://images.unsplash.com/photo-1501785888041-af3ef285b470?auto=format&fit=crop&w=1350&q=80",
+    "Tech": "https://images.unsplash.com/photo-1518770660439-4636190af475?auto=format&fit=crop&w=1350&q=80"
 }
 
 def set_background(url):
@@ -44,6 +45,17 @@ def add_styles():
         [data-testid="stSidebar"] {
             background-color: #B2BEB5;
         }
+        .login-box {
+            background-color: white;
+            padding: 30px;
+            border-radius: 10px;
+            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2);
+            max-width: 500px;
+            margin: 0 auto;
+        }
+        .login-box h1, .login-box h2, .login-box label, .login-box div, .login-box input {
+            font-weight: bold !important;
+        }
         </style>""", unsafe_allow_html=True)
 
 # === Sidebar Navigation ===
@@ -60,7 +72,9 @@ if st.session_state.logged_in:
 
 # === Authentication Pages ===
 def show_auth_page():
+    set_background(wallpapers["Tech"])
     add_styles()
+    st.markdown('<div class="login-box">', unsafe_allow_html=True)
     st.title("👋 Welcome to the Language Translator App")
 
     if st.session_state.auth_choice == "Login":
@@ -93,6 +107,7 @@ def show_auth_page():
             else:
                 st.session_state.registered_users[new_user] = new_pass
                 st.success("Account created! You can now log in.")
+    st.markdown('</div>', unsafe_allow_html=True)
 
 # === Translator with Audio ===
 lang_map = {
