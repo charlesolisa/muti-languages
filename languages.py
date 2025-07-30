@@ -1,184 +1,206 @@
 import streamlit as st
+from deep_translator import GoogleTranslator
 from gtts import gTTS
-import tempfile
 import os
-from googletrans import Translator
+import uuid
+import json
+import hashlib
+from datetime import datetime, timedelta
 
-# === State Initialization ===
-def setup_state():
-    defaults = {
-        "logged_in": False, "username": "", "auth_choice": "Login",
-        "registered_users": {"admin": "admin"},  # Example default user
-        "wallpaper": None, "page": "Language App"
-    }
-    for key, value in defaults.items():
-        if key not in st.session_state:
-            st.session_state[key] = value
+USER_DATA_FILE = "users.json"
 
-setup_state()
+# -------------------- User Handling --------------------
+def load_users():
+    if not os.path.exists(USER_DATA_FILE):
+        with open(USER_DATA_FILE, "w") as f:
+            json.dump({}, f)
+    with open(USER_DATA_FILE, "r") as f:
+        return json.load(f)
 
-# === Backgrounds ===
-wallpapers = {
-    "None": None,
-    "Beach": "https://images.unsplash.com/photo-1506744038136-46273834b3fb?auto=format&fit=crop&w=1350&q=80",
-    "Mountains": "https://images.unsplash.com/photo-1500534623283-312aade485b7?auto=format&fit=crop&w=1350&q=80",
-    "Forest": "https://images.unsplash.com/photo-1501785888041-af3ef285b470?auto=format&fit=crop&w=1350&q=80",
-    "Tech": "https://images.unsplash.com/photo-1518770660439-4636190af475?auto=format&fit=crop&w=1350&q=80"
-}
+def save_users(users):
+    with open(USER_DATA_FILE, "w") as f:
+        json.dump(users, f)
 
-def set_background(url):
-    if url:
-        st.markdown(f"""
-            <style>
-            .stApp {{
-              background-image: url("{url}");
-              background-size: cover;
-              background-position: center;
-              background-repeat: no-repeat;
-              background-attachment: fixed;
-            }}
-            </style>""", unsafe_allow_html=True)
+def hash_password(password):
+    return hashlib.sha256(password.encode()).hexdigest()
 
-def add_styles():
-    st.markdown("""
-        <style>
-        [data-testid="stSidebar"] {
-            background-color: #B2BEB5;
-        }
-        .login-box {
-            background-color: white;
-            padding: 30px;
-            border-radius: 10px;
-            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2);
-            max-width: 500px;
-            margin: 0 auto;
-        }
-        .login-box h1, .login-box h2, .login-box label, .login-box div, .login-box input {
-            font-weight: bold !important;
-        }
-        </style>""", unsafe_allow_html=True)
+users = load_users()
 
-# === Sidebar Navigation ===
-st.sidebar.title("🔐 Authentication")
-st.session_state.auth_choice = st.sidebar.radio("Choose:", ["Login", "Sign Up"])
+# -------------------- Session Defaults --------------------
+if "font_size" not in st.session_state:
+    st.session_state.font_size = 16
 
-if st.session_state.logged_in:
-    st.sidebar.title("⚙️ Navigation")
-    st.session_state.page = st.sidebar.radio("Go to:", ["Language App", "Settings"])
-    if st.sidebar.button("Log Out"):
-        for key in list(st.session_state.keys()):
-            del st.session_state[key]
-        st.rerun()
+if "font_color" not in st.session_state:
+    st.session_state.font_color = "#333333"
 
-# === Authentication Pages ===
-def show_auth_page():
-    set_background(wallpapers["Tech"])
-    add_styles()
-    st.markdown('<div class="login-box">', unsafe_allow_html=True)
-    st.title("👋 Welcome to the Language Translator App")
+if "logged_in" not in st.session_state:
+    st.session_state.logged_in = False
+    st.session_state.username = None
+    st.session_state.role = None
+    st.session_state.login_time = None
 
-    if st.session_state.auth_choice == "Login":
-        st.subheader("🔑 Login")
-        username = st.text_input("Username")
-        password = st.text_input("Password", type="password")
-
-        if st.button("Log In"):
-            if username in st.session_state.registered_users and \
-               st.session_state.registered_users[username] == password:
-                st.session_state.logged_in = True
-                st.session_state.username = username
-                st.rerun()
-            else:
-                st.error("Invalid username or password.")
-
-    elif st.session_state.auth_choice == "Sign Up":
-        st.subheader("📝 Sign Up")
-        new_user = st.text_input("New Username")
-        new_pass = st.text_input("New Password", type="password")
-        confirm_pass = st.text_input("Confirm Password", type="password")
-
-        if st.button("Register"):
-            if not new_user or not new_pass:
-                st.error("Username and password cannot be empty.")
-            elif new_user in st.session_state.registered_users:
-                st.warning("Username already exists. Please log in.")
-            elif new_pass != confirm_pass:
-                st.error("Passwords do not match.")
-            else:
-                st.session_state.registered_users[new_user] = new_pass
-                st.success("Account created! You can now log in.")
-    st.markdown('</div>', unsafe_allow_html=True)
-
-# === Translator with Audio ===
-lang_map = {
+# -------------------- Language Options --------------------
+language_options = {
     'English': 'en',
-    'Spanish': 'es',
     'French': 'fr',
+    'Spanish': 'es',
     'German': 'de',
-    'Italian': 'it',
-    'Russian': 'ru',
-    'Japanese': 'ja',
-    'Chinese (Simplified)': 'zh-cn',
-    'Hindi': 'hi',
     'Arabic': 'ar',
-    'Portuguese': 'pt',
-    'Korean': 'ko',
-    'Turkish': 'tr',
-    'Dutch': 'nl'
+    'Chinese (Simplified)': 'zh-CN'
 }
 
-def generate_tts(text, lang_code='en'):
-    tts = gTTS(text=text, lang=lang_code)
-    tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".mp3")
-    tts.save(tmp.name)
-    return tmp.name
+# -------------------- Dynamic Styles --------------------
+def set_styles():
+    font_size = st.session_state.get("font_size", 16)
+    font_color = st.session_state.get("font_color", "#333333")
 
-def show_language_app():
-    set_background(st.session_state.wallpaper)
-    add_styles()
-    st.title(f"🌍 Language Translator — Hello, {st.session_state.username}!")
-    language = st.selectbox("Choose a language:", list(lang_map.keys()))
+    st.markdown(f"""
+    <style>
+    html, body, [class*="css"] {{
+        font-family: 'Poppins', sans-serif;
+        font-size: {font_size}px;
+        color: {font_color};
+    }}
 
-    st.subheader("🌐 Translate Anything")
-    user_input = st.text_area("Enter text", height=100)
+    .stApp {{
+        background-color: #f4f6f7;
+    }}
 
-    if st.button("Translate"):
-        translator = Translator()
+    .white-box {{
+        background-color: white;
+        padding: 25px;
+        border-radius: 15px;
+        box-shadow: 0 4px 15px rgba(0,0,0,0.05);
+        margin: 20px 0;
+    }}
+
+    .even-box {{
+        background-color: #d0f0c0;
+        padding: 10px;
+        border-left: 5px solid #4caf50;
+        margin-bottom: 10px;
+        border-radius: 10px;
+    }}
+
+    .odd-box {{
+        background-color: #ffcccb;
+        padding: 10px;
+        border-left: 5px solid #e53935;
+        margin-bottom: 10px;
+        border-radius: 10px;
+    }}
+    </style>
+    """, unsafe_allow_html=True)
+
+# -------------------- Sidebar Settings --------------------
+def settings_panel():
+    st.sidebar.markdown("## ⚙️ Settings")
+    st.session_state.font_size = st.sidebar.slider("Font Size", 12, 30, st.session_state.font_size)
+    st.session_state.font_color = st.sidebar.color_picker("Font Color", st.session_state.font_color)
+
+# -------------------- Auth Pages --------------------
+def register_page():
+    st.markdown("<div class='white-box'><h2>📝 Register</h2></div>", unsafe_allow_html=True)
+    new_username = st.text_input("Choose a username", max_chars=20)
+    new_password = st.text_input("Choose a password", type="password")
+    if st.button("Register"):
+        if new_username in users:
+            st.warning("Username already exists.")
+        elif not new_username or not new_password:
+            st.warning("All fields required.")
+        elif not new_username.isalpha():
+            st.error("Username should only contain letters.")
+        else:
+            users[new_username] = {
+                "password": hash_password(new_password),
+                "role": "user"
+            }
+            save_users(users)
+            st.success("✅ Registration successful! You can now log in.")
+
+def login_page():
+    st.markdown("<div class='white-box'><h1>🔐 Login to Continue</h1></div>", unsafe_allow_html=True)
+    username = st.text_input("Username")
+    password = st.text_input("Password", type="password")
+    if st.button("Login"):
+        if username in users and users[username]["password"] == hash_password(password):
+            st.session_state.logged_in = True
+            st.session_state.username = username
+            st.session_state.role = users[username].get("role", "user")
+            st.session_state.login_time = datetime.now().isoformat()
+            st.success(f"✅ Welcome back, {username.title()}!")
+            st.rerun()
+        else:
+            st.error("Invalid credentials.")
+
+def logout():
+    for key in ['logged_in', 'username', 'role', 'login_time']:
+        st.session_state.pop(key, None)
+    st.rerun()
+
+# -------------------- Main Feature --------------------
+def even_odd_app():
+    name = st.text_input("Enter your name")
+    num = st.number_input("Enter a number", step=1, format="%i")
+    selected_language = st.selectbox("Translate to", list(language_options.keys()))
+
+    if st.button("🚀 Check & Translate"):
+        if not name or not name.isalpha():
+            st.warning("Please enter a valid name.")
+            return
+
+        result = f"{name}, {num} is an even number 💯" if num % 2 == 0 else f"{name}, {num} is an odd number ✌️"
+        box_class = "even-box" if num % 2 == 0 else "odd-box"
+        st.markdown(f"<div class='{box_class}'><strong>{result}</strong></div>", unsafe_allow_html=True)
+
+        lang_code = language_options[selected_language]
         try:
-            lang_code = lang_map[language]
-            result = translator.translate(user_input, dest=lang_code)
-            translated = result.text
+            translated = GoogleTranslator(source='auto', target=lang_code).translate(result)
+            st.markdown(f"🌍 <b>{selected_language}:</b> {translated}", unsafe_allow_html=True)
 
-            st.success(f"Translation in {language}:")
-            st.markdown(f"""
-                <div style="background-color: white; padding: 15px;
-                            border-radius: 8px; box-shadow: 0 0 10px rgba(0,0,0,0.1);
-                            font-size: 18px;">
-                  <strong>{translated}</strong>
-                </div>""", unsafe_allow_html=True)
-
-            audio_path = generate_tts(translated, lang_code)
-            with open(audio_path, "rb") as audio_file:
-                st.audio(audio_file.read(), format="audio/mp3")
-            os.remove(audio_path)
+            with st.spinner("🔊 Generating audio..."):
+                tts = gTTS(text=translated, lang=lang_code)
+                filename = f"{uuid.uuid4()}.mp3"
+                tts.save(filename)
+                audio_data = open(filename, 'rb').read()
+                st.audio(audio_data, format='audio/mp3')
+                os.remove(filename)
 
         except Exception as e:
-            st.error(f"Translation failed. Error: {e}")
+            st.error(f"Translation/audio failed: {e}")
 
-# === Settings Page ===
-def show_settings_page():
-    set_background(st.session_state.wallpaper)
-    add_styles()
-    st.title("⚙️ Settings")
-    sel_wallpaper = st.selectbox("Choose Background Wallpaper", list(wallpapers.keys()))
-    st.session_state.wallpaper = wallpapers[sel_wallpaper]
-    st.success("Wallpaper applied!")
+# -------------------- Main App --------------------
+def main_app():
+    settings_panel()  # show sidebar settings
 
-# === Routing ===
-if not st.session_state.logged_in:
-    show_auth_page()
+    st.markdown(f"""
+    <div class='white-box'>
+        <h1>👋 Hello, {st.session_state.username.title()}!</h1>
+        <p>Welcome to the <b>Even & Odd Checker</b> 🌟</p>
+    </div>
+    """, unsafe_allow_html=True)
+
+    even_odd_app()
+
+    st.markdown("---")
+    if st.button("🔒 Logout"):
+        logout()
+
+# -------------------- Run App --------------------
+set_styles()
+
+# Session timeout after 30 minutes
+if st.session_state.get("login_time"):
+    login_time = datetime.fromisoformat(st.session_state["login_time"])
+    if datetime.now() - login_time > timedelta(minutes=30):
+        st.warning("Session expired. Please log in again.")
+        logout()
+
+if st.session_state.logged_in:
+    main_app()
 else:
-    if st.session_state.page == "Language App":
-        show_language_app()
-    elif st.session_state.page == "Settings":
-        show_settings_page()
+    menu = st.radio("Navigation", ["Login", "Register"])
+    if menu == "Register":
+        register_page()
+    else:
+        login_page()
