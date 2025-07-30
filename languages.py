@@ -66,6 +66,10 @@ def set_styles():
         background-color: #f4f6f7;
     }}
 
+    section[data-testid="stSidebar"] {{
+        background-color: #B2BEB5;  /* Ash gray */
+    }}
+
     .white-box {{
         background-color: white;
         padding: 25px;
@@ -129,14 +133,14 @@ def login_page():
             st.session_state.role = users[username].get("role", "user")
             st.session_state.login_time = datetime.now().isoformat()
             st.success(f"✅ Welcome back, {username.title()}!")
-            st.rerun()
+            st.experimental_rerun()
         else:
             st.error("Invalid credentials.")
 
 def logout():
     for key in ['logged_in', 'username', 'role', 'login_time']:
         st.session_state.pop(key, None)
-    st.rerun()
+    st.experimental_rerun()
 
 # -------------------- Main Feature --------------------
 def even_odd_app():
@@ -199,7 +203,9 @@ if st.session_state.get("login_time"):
 if st.session_state.logged_in:
     main_app()
 else:
-    menu = st.radio("Navigation", ["Login", "Register"])
+    with st.sidebar:
+        st.markdown("## Navigation")
+        menu = st.radio("", ["Login", "Register"])
     if menu == "Register":
         register_page()
     else:
